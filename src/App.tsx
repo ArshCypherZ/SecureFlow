@@ -1,28 +1,34 @@
-import { ClipboardEvent, FormEvent, useEffect, useState } from "react";
-import { motion, AnimatePresence } from "motion/react";
+import { FormEvent, useEffect, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { Menu, Shield } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
 import { DashboardIntegrated } from "./components/DashboardIntegrated";
 import { KanbanBoard } from "./components/KanbanBoard";
 import { ProjectsIntegrated } from "./components/ProjectsIntegrated";
 import { TeamIntegrated } from "./components/TeamIntegrated";
 import { SettingsIntegrated } from "./components/SettingsIntegrated";
+import {
+  api,
+  clearAuthToken,
+  setAuthToken,
+  type User,
+  type UserRole,
+} from "./lib/api";
+import {
+  isStrongPasswordInput,
+  isValidDisplayNameInput,
+  isValidUsernameInput,
+  normalizeUsernameInput,
+  sanitizeNameInput,
+} from "./lib/validators";
 
-type RegisteredUser = {
-  username: string;
-  password: string;
-  name: string;
+const viewLabels: Record<string, string> = {
+  dashboard: "Overview",
+  kanban: "Board",
+  projects: "Projects",
+  team: "Team",
+  settings: "Settings",
 };
-
-const REGISTERED_USERS: RegisteredUser[] = [
-  {
-    username: "secureflow-user",
-    password: "SecureFlow@123",
-    name: "SecureFlow Demo User",
-  },
-];
-
-const MAX_FAILED_ATTEMPTS = 3;
-const STORAGE_KEY = "secureflow-registered-users";
 
 export default function App() {
   const [activeView, setActiveView] = useState("dashboard");
@@ -31,331 +37,416 @@ export default function App() {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [registerRole, setRegisterRole] = useState<UserRole>("developer");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [loggedInUser, setLoggedInUser] = useState<RegisteredUser | null>(null);
-  const [failedAttempts, setFailedAttempts] = useState(0);
-  const [isLocked, setIsLocked] = useState(false);
+  const [loggedInUser, setLoggedInUser] = useState<User | null>(null);
   const [message, setMessage] = useState("");
-  const [users, setUsers] = useState<RegisteredUser[]>(REGISTERED_USERS);
+  const [loadingSession, setLoadingSession] = useState(true);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => {
-    const storedUsers = window.localStorage.getItem(STORAGE_KEY);
-    if (!storedUsers) return;
-
-    try {
-      const parsed = JSON.parse(storedUsers) as RegisteredUser[];
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        setUsers(parsed);
+    const boot = async () => {
+      try {
+        const session = await api.me();
+        setLoggedInUser(session.user);
+        setIsAuthenticated(true);
+      } catch {
+        clearAuthToken();
+        setIsAuthenticated(false);
+      } finally {
+        setLoadingSession(false);
       }
-    } catch {
-      window.localStorage.removeItem(STORAGE_KEY);
-    }
+    };
+    void boot();
   }, []);
-
-  useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(users));
-  }, [users]);
 
   const resetAuthFields = () => {
     setName("");
     setUsername("");
     setPassword("");
     setConfirmPassword("");
+    setRegisterRole("developer");
   };
 
-  const handleLogin = (event: FormEvent<HTMLFormElement>) => {
+  const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const normalizedUsername = normalizeUsernameInput(username);
 
-    if (isLocked) {
-      setMessage("Account is locked. Contact support to unlock access.");
-      return;
-    }
-
-    const enteredUsername = username.trim();
-    const enteredPassword = password;
-
-    if (!enteredUsername || !enteredPassword) {
+    if (!normalizedUsername || !password) {
       setMessage("Username and password are required.");
       return;
     }
-
-    const matchedUser = users.find((user) => user.username === enteredUsername);
-
-    if (!matchedUser || matchedUser.password !== enteredPassword) {
-      const nextAttempts = failedAttempts + 1;
-      setFailedAttempts(nextAttempts);
-      setPassword("");
-      if (nextAttempts >= MAX_FAILED_ATTEMPTS) {
-        setIsLocked(true);
-        setMessage("Account locked after multiple failed login attempts.");
-      } else {
-        setMessage("Incorrect username or password. Please try again.");
-      }
+    if (!isValidUsernameInput(normalizedUsername)) {
+      setMessage("Enter a valid username.");
       return;
     }
 
-    setFailedAttempts(0);
-    setMessage("");
-    setIsAuthenticated(true);
-    setLoggedInUser(matchedUser);
-    setPassword("");
-    window.history.pushState({ page: "workspace" }, "", `${window.location.pathname}#workspace`);
+    try {
+      const result = await api.login({
+        username: normalizedUsername,
+        password,
+      });
+      setAuthToken(result.token);
+      setLoggedInUser(result.user);
+      setIsAuthenticated(true);
+      setMessage("");
+      setPassword("");
+      window.history.pushState({ page: "workspace" }, "", `${window.location.pathname}#workspace`);
+    } catch (error) {
+      setPassword("");
+      setMessage(error instanceof Error ? error.message : "Login failed");
+    }
   };
 
-  const handleRegister = (event: FormEvent<HTMLFormElement>) => {
+  const handleRegister = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const sanitizedName = sanitizeNameInput(name);
+    const normalizedUsername = normalizeUsernameInput(username);
 
-    const enteredName = name.trim();
-    const enteredUsername = username.trim();
-    const enteredPassword = password;
-    const enteredConfirmPassword = confirmPassword;
-
-    if (!enteredName || !enteredUsername || !enteredPassword || !enteredConfirmPassword) {
+    if (!sanitizedName || !normalizedUsername || !password || !confirmPassword) {
       setMessage("All registration fields are required.");
       return;
     }
-
-    if (enteredPassword !== enteredConfirmPassword) {
+    if (!isValidDisplayNameInput(sanitizedName)) {
+      setMessage("Full name must be at least 2 characters long.");
+      return;
+    }
+    if (!isValidUsernameInput(normalizedUsername)) {
+      setMessage(
+        "Username must be 3-32 characters and use only lowercase letters, numbers, dots, underscores, or hyphens."
+      );
+      return;
+    }
+    if (!isStrongPasswordInput(password)) {
+      setMessage(
+        "Password must be at least 8 characters and include upper, lower, and numeric characters."
+      );
+      return;
+    }
+    if (password !== confirmPassword) {
       setMessage("Passwords do not match.");
       setPassword("");
       setConfirmPassword("");
       return;
     }
 
-    if (users.some((user) => user.username === enteredUsername)) {
-      setMessage("That username is already registered. Please choose another one.");
-      return;
+    try {
+      const result = await api.register({
+        name: sanitizedName,
+        username: normalizedUsername,
+        role: registerRole,
+        password,
+      });
+      setAuthToken(result.token);
+      setLoggedInUser(result.user);
+      setIsAuthenticated(true);
+      setMessage("");
+      resetAuthFields();
+    } catch (error) {
+      setPassword("");
+      setConfirmPassword("");
+      setMessage(error instanceof Error ? error.message : "Registration failed");
     }
-
-    const newUser: RegisteredUser = {
-      name: enteredName,
-      username: enteredUsername,
-      password: enteredPassword,
-    };
-
-    setUsers((currentUsers) => [...currentUsers, newUser]);
-    setAuthMode("login");
-    setFailedAttempts(0);
-    setIsLocked(false);
-    setMessage("Registration successful. You can now log in with your new account.");
-    setName("");
-    setConfirmPassword("");
-    setPassword("");
   };
 
   const handleLogout = () => {
+    clearAuthToken();
     setIsAuthenticated(false);
     setLoggedInUser(null);
     setPassword("");
     setActiveView("dashboard");
-    setMessage("You have been logged out.");
+    setMobileNavOpen(false);
+    setMessage("You have been signed out.");
     window.history.replaceState({ page: "login" }, "", window.location.pathname);
-  };
-
-  const preventClipboard = (event: ClipboardEvent<HTMLInputElement>) => {
-    event.preventDefault();
-    setPassword("");
-    setConfirmPassword("");
-    setMessage("Copy, cut, and paste are disabled for the password field.");
   };
 
   const switchAuthMode = (mode: "login" | "register") => {
     setAuthMode(mode);
     setMessage("");
-    setFailedAttempts(0);
-    setIsLocked(false);
     resetAuthFields();
   };
 
+  const handleViewChange = (view: string) => {
+    setActiveView(view);
+    setMobileNavOpen(false);
+  };
+
   const renderView = () => {
+    const isManager = loggedInUser?.role === "manager";
     switch (activeView) {
       case "dashboard":
-        return <DashboardIntegrated onViewChange={setActiveView} />;
+        return <DashboardIntegrated onViewChange={handleViewChange} />;
       case "kanban":
-        return <KanbanBoard />;
+        return <KanbanBoard currentUser={loggedInUser} />;
       case "projects":
-        return <ProjectsIntegrated />;
+        return <ProjectsIntegrated isManager={isManager} />;
       case "team":
-        return <TeamIntegrated />;
+        return <TeamIntegrated isManager={isManager} currentUser={loggedInUser} />;
       case "settings":
-        return <SettingsIntegrated />;
+        return <SettingsIntegrated isManager={isManager} currentUser={loggedInUser} />;
       default:
-        return <DashboardIntegrated onViewChange={setActiveView} />;
+        return <DashboardIntegrated onViewChange={handleViewChange} />;
     }
   };
 
+  if (loadingSession) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-neutral-950 px-6 text-sm text-neutral-200">
+        Restoring workspace...
+      </div>
+    );
+  }
+
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-neutral-100 flex items-center justify-center p-6">
-        <div className="w-full max-w-md bg-white border border-neutral-200 rounded-xl shadow-sm p-8">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h1 className="text-2xl font-semibold text-neutral-900">
-                {authMode === "login" ? "SecureFlow Login" : "Create Your SecureFlow Account"}
-              </h1>
-              <p className="text-sm text-neutral-600 mt-2">
-                {authMode === "login"
-                  ? "Enter your credentials to continue."
-                  : "Register a new user to access the dashboard."}
-              </p>
-            </div>
-          </div>
+      <div className="auth-page">
+        <div className="auth-page__glow auth-page__glow--left" />
+        <div className="auth-page__glow auth-page__glow--right" />
+        <div className="auth-page__grid" />
 
-          <div className="mt-6 grid grid-cols-2 rounded-lg bg-neutral-100 p-1">
-            <button
-              type="button"
-              onClick={() => switchAuthMode("login")}
-              className={`rounded-md px-3 py-2 text-sm font-medium transition ${
-                authMode === "login" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-600"
-              }`}
-            >
-              Login
-            </button>
-            <button
-              type="button"
-              onClick={() => switchAuthMode("register")}
-              className={`rounded-md px-3 py-2 text-sm font-medium transition ${
-                authMode === "register" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-600"
-              }`}
-            >
-              Register
-            </button>
-          </div>
-
-          <form
-            className="mt-6 space-y-4"
-            onSubmit={authMode === "login" ? handleLogin : handleRegister}
-          >
-            {authMode === "register" ? (
-              <div className="space-y-2">
-                <label htmlFor="name" className="text-sm font-medium text-neutral-700">
-                  Full Name
-                </label>
-                <input
-                  id="name"
-                  name="name"
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  autoComplete="name"
-                  className="w-full px-3 py-2 border border-neutral-300 rounded-md focus:outline-none focus:ring-2 focus:ring-neutral-900"
-                />
+        <div className="auth-layout">
+          <section className="auth-panel">
+            <div className="auth-brand">
+              <div className="auth-brand__icon">
+                <Shield className="h-5 w-5" />
               </div>
-            ) : null}
-
-            <div className="space-y-2">
-              <label htmlFor="username" className="text-sm font-medium text-neutral-700">
-                Username
-              </label>
-              <input
-                id="username"
-                name="username"
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                autoComplete="username"
-                className="w-full px-3 py-2 border border-neutral-300 rounded-md focus:outline-none focus:ring-2 focus:ring-neutral-900"
-              />
+              <div>
+                <p className="auth-brand__eyebrow">SecureFlow</p>
+                <h1 className="auth-panel__title">
+                  {authMode === "login" ? "Sign in to your workspace" : "Create your account"}
+                </h1>
+              </div>
             </div>
 
-            <div className="space-y-2">
-              <label htmlFor="password" className="text-sm font-medium text-neutral-700">
-                Password
-              </label>
-              <input
+            <p className="auth-panel__subtitle">
+              Username-based authentication, role-aware access, and live ticket workflows for
+              vulnerability remediation teams.
+            </p>
+
+            <div className="auth-tabs" role="tablist" aria-label="Authentication mode">
+              <button
+                type="button"
+                onClick={() => switchAuthMode("login")}
+                className={`auth-tabs__button ${authMode === "login" ? "is-active" : ""}`}
+              >
+                Login
+              </button>
+              <button
+                type="button"
+                onClick={() => switchAuthMode("register")}
+                className={`auth-tabs__button ${authMode === "register" ? "is-active" : ""}`}
+              >
+                Register
+              </button>
+            </div>
+
+            <form className="auth-form" onSubmit={authMode === "login" ? handleLogin : handleRegister}>
+              {authMode === "register" ? (
+                <>
+                  <Field
+                    id="name"
+                    label="Full name"
+                    value={name}
+                    onChange={setName}
+                    autoComplete="name"
+                  />
+
+                  <div className="auth-row">
+                    <Field
+                      id="username"
+                      label="Username"
+                      value={username}
+                      onChange={setUsername}
+                      autoComplete="username"
+                    />
+                    <label className="auth-field">
+                      <span className="auth-field__label">Role</span>
+                      <select
+                        value={registerRole}
+                        onChange={(event) => setRegisterRole(event.target.value as UserRole)}
+                        className="auth-input"
+                      >
+                        <option value="developer">Developer</option>
+                        <option value="manager">Manager</option>
+                      </select>
+                    </label>
+                  </div>
+                </>
+              ) : (
+                <Field
+                  id="username"
+                  label="Username"
+                  value={username}
+                  onChange={setUsername}
+                  autoComplete="username"
+                />
+              )}
+
+              <Field
                 id="password"
-                name="password"
+                label="Password"
                 type="password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={setPassword}
                 autoComplete={authMode === "login" ? "current-password" : "new-password"}
-                onCopy={preventClipboard}
-                onCut={preventClipboard}
-                onPaste={preventClipboard}
-                className="w-full px-3 py-2 border border-neutral-300 rounded-md focus:outline-none focus:ring-2 focus:ring-neutral-900"
               />
-            </div>
 
-            {authMode === "register" ? (
-              <div className="space-y-2">
-                <label htmlFor="confirmPassword" className="text-sm font-medium text-neutral-700">
-                  Confirm Password
-                </label>
-                <input
+              {authMode === "register" ? (
+                <Field
                   id="confirmPassword"
-                  name="confirmPassword"
+                  label="Confirm password"
                   type="password"
                   value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  onChange={setConfirmPassword}
                   autoComplete="new-password"
-                  onCopy={preventClipboard}
-                  onCut={preventClipboard}
-                  onPaste={preventClipboard}
-                  className="w-full px-3 py-2 border border-neutral-300 rounded-md focus:outline-none focus:ring-2 focus:ring-neutral-900"
                 />
-              </div>
-            ) : null}
+              ) : null}
 
-            <button
-              type="submit"
-              disabled={authMode === "login" && isLocked}
-              className="w-full py-2.5 rounded-md bg-neutral-900 text-white font-medium disabled:bg-neutral-400 disabled:cursor-not-allowed"
-            >
-              {authMode === "login" ? "Log In" : "Create Account"}
-            </button>
-          </form>
+              <button type="submit" className="auth-submit">
+                {authMode === "login" ? "Log In" : "Create Account"}
+              </button>
+            </form>
 
-          {message ? (
-            <p className="mt-4 text-sm text-neutral-700" role="status">
-              {message}
+            {message ? <div className="auth-message">{message}</div> : null}
+
+            <p className="auth-note">
+              Register either a manager or a developer account. Managers can create projects,
+              scans, and tickets. Developers can work on their assigned remediation tickets.
             </p>
-          ) : null}
+          </section>
 
-          <p className="mt-4 text-xs text-neutral-500">
-            Demo account: <span className="font-mono">secureflow-user</span> /{" "}
-            <span className="font-mono">SecureFlow@123</span>. New accounts are stored in your
-            browser for this project.
-          </p>
+          <aside className="auth-hero">
+            <h2 className="auth-hero__title">
+              Register once, scan repos, and route fixes without fake data in the loop.
+            </h2>
+            <p className="auth-hero__text">
+              SecureFlow is wired for real project onboarding: username auth, role-based actions,
+              GitHub repository scans, and ticket tracking from discovery to remediation.
+            </p>
+
+            <div className="auth-hero__stack">
+              <PromoCard
+                title="Manager workflow"
+                body="Add repositories, queue scans, create manual tickets, assign developers, and manage scan settings."
+              />
+              <PromoCard
+                title="Developer workflow"
+                body="See the full board, open ticket details, and update the status of assigned findings without elevated access."
+              />
+              <PromoCard
+                title="Clean startup"
+                body="No seeded users, tickets, or projects. The workspace initializes cleanly and builds from real input."
+              />
+            </div>
+          </aside>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-neutral-50 relative">
-      {/* Subtle background pattern */}
-      <div className="fixed inset-0 dot-pattern opacity-40 pointer-events-none" />
-      
-      {/* Main Layout */}
-      <div className="relative flex">
-        <Sidebar activeView={activeView} onViewChange={setActiveView} />
-        
-        <main className="flex-1 ml-64 min-h-screen">
-          <div className="flex justify-end items-center gap-3 p-4 border-b border-neutral-200 bg-white/80 backdrop-blur sticky top-0 z-10">
-            <span className="text-sm text-neutral-700">
-              Signed in as <strong>{loggedInUser?.name}</strong>
-            </span>
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="px-3 py-1.5 text-sm rounded-md bg-neutral-900 text-white"
-            >
-              Sign Out
-            </button>
+    <div className="min-h-screen bg-neutral-50 text-neutral-950">
+      <div className="fixed inset-0 pointer-events-none opacity-20 dot-pattern" />
+
+      <Sidebar
+        activeView={activeView}
+        onViewChange={handleViewChange}
+        currentUser={loggedInUser}
+        mobileOpen={mobileNavOpen}
+        onClose={() => setMobileNavOpen(false)}
+      />
+
+      <div className="relative lg:pl-72">
+        <header className="sticky top-0 z-30 border-b border-neutral-200 bg-white/88 backdrop-blur">
+          <div className="flex h-16 items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setMobileNavOpen(true)}
+                className="rounded-xl border border-neutral-200 p-2 text-neutral-700 hover:bg-neutral-100 lg:hidden"
+              >
+                <Menu className="h-5 w-5" />
+              </button>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-neutral-500">
+                  Workspace
+                </p>
+                <h1 className="text-lg font-semibold tracking-tight">
+                  {viewLabels[activeView] ?? "Overview"}
+                </h1>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="hidden rounded-full border border-neutral-200 bg-white px-4 py-2 text-sm text-neutral-700 sm:block">
+                <span className="font-medium text-neutral-950">{loggedInUser?.name}</span>
+                <span className="text-neutral-400"> · </span>
+                <span className="capitalize">{loggedInUser?.role}</span>
+              </div>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="rounded-xl bg-neutral-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-neutral-800"
+              >
+                Sign Out
+              </button>
+            </div>
           </div>
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={activeView}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-            >
-              {renderView()}
-            </motion.div>
-          </AnimatePresence>
-        </main>
+        </header>
+
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={activeView}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.18 }}
+            className="min-h-[calc(100vh-4rem)]"
+          >
+            {renderView()}
+          </motion.div>
+        </AnimatePresence>
       </div>
+    </div>
+  );
+}
+
+function Field({
+  id,
+  label,
+  value,
+  onChange,
+  type = "text",
+  autoComplete,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  type?: string;
+  autoComplete?: string;
+}) {
+  return (
+    <label htmlFor={id} className="auth-field">
+      <span className="auth-field__label">{label}</span>
+      <input
+        id={id}
+        name={id}
+        type={type}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        autoComplete={autoComplete}
+        className="auth-input"
+      />
+    </label>
+  );
+}
+
+function PromoCard({ title, body }: { title: string; body: string }) {
+  return (
+    <div className="auth-promo">
+      <h3 className="auth-promo__title">{title}</h3>
+      <p className="auth-promo__body">{body}</p>
     </div>
   );
 }

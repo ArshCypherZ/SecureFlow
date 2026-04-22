@@ -7,11 +7,14 @@ import type {
   VulnerabilityTicket,
 } from "../types.js";
 
-/** Shared persistence contract (in-memory or PostgreSQL). All methods are async for DB compatibility. */
 export type AppDataStore = {
   listUsers(): Promise<User[]>;
   getUser(id: string): Promise<User | undefined>;
+  getUserByUsername(username: string): Promise<User | undefined>;
   createUser(input: Omit<User, "id" | "avatar"> & { avatar?: string }): Promise<User>;
+  deleteUser(id: string): Promise<User | undefined>;
+  getUserPasswordHash(userId: string): Promise<string | undefined>;
+  setUserPasswordHash(userId: string, passwordHash: string): Promise<void>;
   listProjects(): Promise<Project[]>;
   getProject(id: string): Promise<Project | undefined>;
   findProjectByRepository(repo: string): Promise<Project | undefined>;
@@ -19,11 +22,13 @@ export type AppDataStore = {
     name: string;
     repository: string;
     localPath: string | null;
-    scanStatus: ScanStatus;
+      scanStatus: ScanStatus;
   }): Promise<Project>;
   updateProject(id: string, patch: Partial<Project>): Promise<Project | undefined>;
+  deleteProject(id: string): Promise<Project | undefined>;
   listTickets(filters?: {
     projectId?: string;
+    assigneeId?: string;
     q?: string;
     severity?: string;
     status?: string;
@@ -40,6 +45,7 @@ export type AppDataStore = {
     id: string,
     patch: Partial<Pick<VulnerabilityTicket, "status" | "assigneeId">>
   ): Promise<VulnerabilityTicket | undefined>;
+  deleteTicket(id: string): Promise<VulnerabilityTicket | undefined>;
   deleteTicketsForProject(projectId: string): Promise<void>;
   pushActivity(event: Omit<ActivityEvent, "id" | "createdAt">): Promise<ActivityEvent>;
   listActivities(limit?: number): Promise<ActivityEvent[]>;

@@ -1,77 +1,150 @@
-import { LayoutDashboard, Kanban, FolderGit2, Users, Settings, Shield, ChevronRight } from "lucide-react";
-import { motion } from "motion/react";
+import {
+  ChevronRight,
+  FolderGit2,
+  Kanban,
+  LayoutDashboard,
+  Settings,
+  Shield,
+  Users,
+  X,
+} from "lucide-react";
+import type { User } from "../lib/api";
 
 interface SidebarProps {
   activeView: string;
   onViewChange: (view: string) => void;
+  currentUser: User | null;
+  mobileOpen: boolean;
+  onClose: () => void;
 }
 
-export function Sidebar({ activeView, onViewChange }: SidebarProps) {
-  const menuItems = [
-    { id: "dashboard", label: "Overview", icon: LayoutDashboard },
-    { id: "kanban", label: "Board", icon: Kanban },
-    { id: "projects", label: "Projects", icon: FolderGit2 },
-    { id: "team", label: "Team", icon: Users },
-    { id: "settings", label: "Settings", icon: Settings },
-  ];
+const menuItems = [
+  { id: "dashboard", label: "Overview", description: "Security posture", icon: LayoutDashboard },
+  { id: "kanban", label: "Board", description: "Tickets and flow", icon: Kanban },
+  { id: "projects", label: "Projects", description: "Repositories and scans", icon: FolderGit2 },
+  { id: "team", label: "Team", description: "People and workload", icon: Users },
+  { id: "settings", label: "Settings", description: "Scan and access options", icon: Settings },
+];
 
+export function Sidebar({
+  activeView,
+  onViewChange,
+  currentUser,
+  mobileOpen,
+  onClose,
+}: SidebarProps) {
   return (
-    <div className="fixed left-0 top-0 h-screen w-64 bg-white border-r border-neutral-200 flex flex-col">
-      {/* Logo */}
-      <div className="p-6 border-b border-neutral-200">
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <div className="w-8 h-8 bg-black rounded-sm flex items-center justify-center">
-              <Shield className="w-4 h-4 text-white" />
+    <>
+      {mobileOpen ? (
+        <button
+          type="button"
+          aria-label="Close navigation overlay"
+          className="fixed inset-0 z-40 bg-neutral-950/50 lg:hidden"
+          onClick={onClose}
+        />
+      ) : null}
+
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-neutral-200 bg-white transition-transform duration-200 lg:translate-x-0 ${
+          mobileOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-5">
+          <button
+            type="button"
+            onClick={() => onViewChange("dashboard")}
+            className="flex items-center gap-3 text-left"
+          >
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-neutral-950 text-white shadow-sm">
+              <Shield className="h-5 w-5" />
             </div>
-            <div className="absolute -right-1 -top-1 w-2 h-2 bg-lime-400 rounded-full" />
-          </div>
-          <div>
-            <h1 className="text-lg font-semibold tracking-tight">SecureFlow</h1>
+            <div>
+              <p className="text-lg font-semibold tracking-tight text-neutral-950">SecureFlow</p>
+              <p className="text-xs uppercase tracking-[0.24em] text-neutral-500">
+                Vulnerability Ops
+              </p>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 lg:hidden"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="border-b border-neutral-200 px-5 py-4">
+          <div className="rounded-2xl border border-lime-200 bg-lime-50 px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-lime-700">
+              Signed In
+            </p>
+            <p className="mt-2 text-base font-semibold text-neutral-950">
+              {currentUser?.name ?? "Workspace user"}
+            </p>
+            <p className="mt-1 text-sm text-neutral-600">@{currentUser?.username ?? "user"}</p>
+            <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-xs font-medium capitalize text-neutral-700">
+              <span className="h-2 w-2 rounded-full bg-lime-500" />
+              {currentUser?.role ?? "viewer"}
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 px-3 py-4">
-        {menuItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = activeView === item.id;
-          
-          return (
-            <button
-              key={item.id}
-              onClick={() => onViewChange(item.id)}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg transition-colors mb-1 group ${
-                isActive
-                  ? "bg-neutral-100 text-neutral-900"
-                  : "text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50"
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <Icon className="w-4 h-4" />
-                <span className="text-sm font-medium">{item.label}</span>
-              </div>
-              {isActive && (
-                <ChevronRight className="w-4 h-4 text-neutral-400" />
-              )}
-            </button>
-          );
-        })}
-      </nav>
+        <nav className="flex-1 space-y-2 overflow-y-auto px-4 py-5">
+          {menuItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = activeView === item.id;
 
-      {/* User Section */}
-      <div className="p-4 border-t border-neutral-200">
-        <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-neutral-50 cursor-pointer transition-colors">
-          <div className="w-8 h-8 bg-gradient-to-br from-violet-500 to-purple-600 rounded-full flex items-center justify-center text-xs font-semibold text-white">
-            SC
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-neutral-900 truncate">Sarah Chen</p>
-            <p className="text-xs text-neutral-500 truncate">Manager</p>
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onViewChange(item.id)}
+                className={`group flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-left transition ${
+                  isActive
+                    ? "border-neutral-950 bg-neutral-950 text-white shadow-sm"
+                    : "border-transparent bg-transparent text-neutral-700 hover:border-neutral-200 hover:bg-neutral-50 hover:text-neutral-950"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`flex h-10 w-10 items-center justify-center rounded-xl ${
+                      isActive ? "bg-white/12" : "bg-neutral-100"
+                    }`}
+                  >
+                    <Icon className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold">{item.label}</p>
+                    <p
+                      className={`text-xs ${
+                        isActive ? "text-white/70" : "text-neutral-500"
+                      }`}
+                    >
+                      {item.description}
+                    </p>
+                  </div>
+                </div>
+                <ChevronRight
+                  className={`h-4 w-4 transition ${
+                    isActive ? "text-white/80" : "text-neutral-300 group-hover:text-neutral-500"
+                  }`}
+                />
+              </button>
+            );
+          })}
+        </nav>
+
+        <div className="border-t border-neutral-200 px-5 py-4">
+          <div className="rounded-2xl bg-neutral-950 px-4 py-4 text-white">
+            <p className="text-xs uppercase tracking-[0.22em] text-neutral-400">Workspace rule</p>
+            <p className="mt-2 text-sm leading-relaxed text-neutral-100">
+              Managers create and assign work. Developers move only their assigned tickets.
+            </p>
           </div>
         </div>
-      </div>
-    </div>
+      </aside>
+    </>
   );
 }

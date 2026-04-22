@@ -8,7 +8,7 @@ export type ScanStatus = "idle" | "queued" | "scanning" | "ready" | "error";
 export interface User {
   id: string;
   name: string;
-  email: string;
+  username: string;
   role: UserRole;
   avatar: string;
 }
@@ -16,6 +16,7 @@ export interface User {
 export interface VulnerabilityTicket {
   id: string;
   projectId: string;
+  source: "scan" | "manual";
   osvId: string;
   summary: string;
   description: string;
@@ -48,21 +49,20 @@ export interface Project {
 }
 
 export interface AppSettings {
-  pushNotifications: boolean;
-  emailAlerts: boolean;
-  automaticScanning: boolean;
   githubPat: string | null;
-  osvApiKey: string | null;
 }
 
 export type ActivityKind =
   | "project.created"
+  | "project.deleted"
   | "project.scan_started"
   | "project.scan_completed"
   | "project.scan_failed"
   | "ticket.created"
+  | "ticket.deleted"
   | "ticket.updated"
-  | "ticket.assigned";
+  | "ticket.assigned"
+  | "user.deleted";
 
 export interface ActivityEvent {
   id: string;

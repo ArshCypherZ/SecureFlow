@@ -2,15 +2,35 @@ import { FormEvent, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Plus, Search, SlidersHorizontal, X } from "lucide-react";
 import { VulnerabilityTicket } from "./VulnerabilityTicket";
-import type { Severity, TicketStatus } from "../lib/mockData";
-import { api, formatDate, Project, User, VulnerabilityTicket as Ticket } from "../lib/api";
+import { MarkdownContent } from "./MarkdownContent";
+import {
+  api,
+  formatDate,
+  type Project,
+  type Severity,
+  type TicketStatus,
+  type User,
+  type VulnerabilityTicket as Ticket,
+} from "../lib/api";
+import { sanitizeSingleLineInput } from "../lib/validators";
 
-export function KanbanBoard() {
+const selectChevronStyle = {
+  backgroundImage:
+    'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%23737373\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'%3E%3C/path%3E%3C/svg%3E")',
+  backgroundRepeat: "no-repeat",
+  backgroundPosition: "right 0.5rem center",
+  backgroundSize: "1.25rem",
+} as const;
+
+export function KanbanBoard({ currentUser }: { currentUser: User | null }) {
+  const isManager = currentUser?.role === "manager";
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterSeverity, setFilterSeverity] = useState<string>("all");
+  const [filterProjectId, setFilterProjectId] = useState("all");
+  const [filterAssigneeId, setFilterAssigneeId] = useState("all");
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [showNewTicket, setShowNewTicket] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -45,14 +65,43 @@ export function KanbanBoard() {
     void loadBoard();
   }, []);
 
+  const usersById = new Map(users.map((user) => [user.id, user]));
+  const developers = users.filter((user) => user.role === "developer");
+  const projectsById = new Map(projects.map((project) => [project.id, project]));
+  const searchValue = searchTerm.trim().toLowerCase();
+
   const filteredTickets = tickets.filter((ticket) => {
+    const assignee = ticket.assignee ?? (ticket.assigneeId ? usersById.get(ticket.assigneeId) ?? null : null);
+    const project = projectsById.get(ticket.projectId);
     const matchesSearch =
-      ticket.summary.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      ticket.package.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      ticket.osvId.toLowerCase().includes(searchTerm.toLowerCase());
+      !searchValue ||
+      [
+        ticket.summary,
+        ticket.description,
+        ticket.package,
+        ticket.osvId,
+        ticket.ecosystem,
+        ticket.severity,
+        ticket.status,
+        project?.name ?? "",
+        project?.repository ?? "",
+        assignee?.name ?? "",
+        assignee?.username ?? "",
+      ].some((value) => value.toLowerCase().includes(searchValue));
     const matchesSeverity = filterSeverity === "all" || ticket.severity === filterSeverity;
-    return matchesSearch && matchesSeverity;
+    const matchesProject = filterProjectId === "all" || ticket.projectId === filterProjectId;
+    const matchesAssignee =
+      filterAssigneeId === "all" ||
+      (filterAssigneeId === "unassigned" ? !ticket.assigneeId : ticket.assigneeId === filterAssigneeId);
+
+    return matchesSearch && matchesSeverity && matchesProject && matchesAssignee;
   });
+
+  const hasActiveFilters =
+    searchValue.length > 0 ||
+    filterSeverity !== "all" ||
+    filterProjectId !== "all" ||
+    filterAssigneeId !== "all";
 
   const getTicketsByStatus = (status: TicketStatus) => {
     return filteredTickets.filter((ticket) => ticket.status === status);
@@ -65,7 +114,7 @@ export function KanbanBoard() {
   };
 
   return (
-    <div className="p-8 h-screen flex flex-col">
+    <div className="p-4 sm:p-6 lg:p-8">
       {/* Header */}
       <div className="mb-8">
         <div className="flex items-start justify-between mb-6">
@@ -79,7 +128,8 @@ export function KanbanBoard() {
           </div>
           <button
             onClick={() => setShowNewTicket(true)}
-            className="px-4 py-2 bg-black text-white rounded-lg hover:bg-neutral-800 transition-colors font-medium flex items-center gap-2"
+            disabled={!isManager}
+            className="px-4 py-2 bg-black text-white rounded-lg hover:bg-neutral-800 transition-colors font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Plus className="w-4 h-4" />
             New Ticket
@@ -87,44 +137,93 @@ export function KanbanBoard() {
         </div>
 
         {/* Filters */}
-        <div className="flex items-center gap-3">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
-            <input
-              type="text"
-              placeholder="Search vulnerabilities..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-white border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent transition-all text-sm"
-            />
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
+              <input
+                type="text"
+                placeholder="Search tickets, projects, packages, or developers..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 bg-white border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent transition-all text-sm"
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-2">
+                <SlidersHorizontal className="w-4 h-4 text-neutral-400" />
+                <select
+                  value={filterSeverity}
+                  onChange={(e) => setFilterSeverity(e.target.value)}
+                  className="px-3 py-2.5 bg-white border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-neutral-900 transition-all text-sm cursor-pointer appearance-none pr-8"
+                  style={selectChevronStyle}
+                >
+                  <option value="all">All Severities</option>
+                  <option value="CRITICAL">Critical</option>
+                  <option value="HIGH">High</option>
+                  <option value="MEDIUM">Medium</option>
+                  <option value="LOW">Low</option>
+                </select>
+              </div>
+
+              <select
+                value={filterProjectId}
+                onChange={(e) => setFilterProjectId(e.target.value)}
+                className="px-3 py-2.5 bg-white border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-neutral-900 transition-all text-sm cursor-pointer appearance-none pr-8"
+                style={selectChevronStyle}
+              >
+                <option value="all">All Projects</option>
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={filterAssigneeId}
+                onChange={(e) => setFilterAssigneeId(e.target.value)}
+                className="px-3 py-2.5 bg-white border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-neutral-900 transition-all text-sm cursor-pointer appearance-none pr-8"
+                style={selectChevronStyle}
+              >
+                <option value="all">All Developers</option>
+                <option value="unassigned">Unassigned</option>
+                {developers.map((user) => (
+                  <option key={user.id} value={user.id}>
+                    {user.name}
+                  </option>
+                ))}
+              </select>
+
+              <div className="px-3 py-2.5 bg-neutral-100 border border-neutral-200 rounded-lg">
+                <span className="text-sm font-mono font-semibold text-neutral-900">
+                  {filteredTickets.length}
+                </span>
+                <span className="text-sm text-neutral-500 ml-1">
+                  {filteredTickets.length === tickets.length ? "tickets" : `of ${tickets.length}`}
+                </span>
+              </div>
+
+              {hasActiveFilters ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchTerm("");
+                    setFilterSeverity("all");
+                    setFilterProjectId("all");
+                    setFilterAssigneeId("all");
+                  }}
+                  className="px-3 py-2.5 bg-white border border-neutral-200 rounded-lg text-sm font-medium text-neutral-700 transition hover:bg-neutral-100"
+                >
+                  Clear
+                </button>
+              ) : null}
+            </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <SlidersHorizontal className="w-4 h-4 text-neutral-400" />
-            <select
-              value={filterSeverity}
-              onChange={(e) => setFilterSeverity(e.target.value)}
-              className="px-3 py-2.5 bg-white border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-neutral-900 transition-all text-sm cursor-pointer appearance-none pr-8"
-              style={{
-                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23737373'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`,
-                backgroundRepeat: "no-repeat",
-                backgroundPosition: "right 0.5rem center",
-                backgroundSize: "1.25rem",
-              }}
-            >
-              <option value="all">All Severities</option>
-              <option value="CRITICAL">Critical</option>
-              <option value="HIGH">High</option>
-              <option value="MEDIUM">Medium</option>
-              <option value="LOW">Low</option>
-            </select>
-          </div>
-
-          <div className="px-3 py-2.5 bg-neutral-100 border border-neutral-200 rounded-lg">
-            <span className="text-sm font-mono font-semibold text-neutral-900">
-              {filteredTickets.length}
-            </span>
-            <span className="text-sm text-neutral-500 ml-1">items</span>
+          <div className="text-xs text-neutral-500">
+            Search also matches project name, repository, assignee name, severity, and package details.
           </div>
         </div>
         {message && (
@@ -138,9 +237,12 @@ export function KanbanBoard() {
       </div>
 
       {/* Kanban Columns */}
-      <div className="flex-1 grid grid-cols-4 gap-4 overflow-hidden">
+      <div
+        className="grid gap-4"
+        style={{ alignItems: "start", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}
+      >
         {loading && (
-          <div className="col-span-4 bg-white border border-neutral-200 rounded-2xl p-8 text-center text-neutral-500">
+          <div className="bg-white border border-neutral-200 rounded-2xl p-8 text-center text-neutral-500">
             Loading tickets from backend...
           </div>
         )}
@@ -148,7 +250,7 @@ export function KanbanBoard() {
           const columnTickets = getTicketsByStatus(column.id);
 
           return (
-            <div key={column.id} className="flex flex-col h-full">
+            <div key={column.id} className="flex flex-col">
               {/* Column Header */}
               <div className="mb-4">
                 <div className="bg-white border border-neutral-200 rounded-xl p-4">
@@ -169,13 +271,15 @@ export function KanbanBoard() {
               </div>
 
               {/* Column Content */}
-              <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+              <div className="space-y-3">
                 <AnimatePresence mode="popLayout">
                   {columnTickets.map((ticket) => (
                     <VulnerabilityTicket
                       key={ticket.id}
                       ticket={ticket}
                       users={users}
+                      currentUser={currentUser}
+                      canAssign={isManager}
                       onOpen={setSelectedTicket}
                       onTicketUpdated={updateTicketInState}
                       onError={setMessage}
@@ -201,12 +305,19 @@ export function KanbanBoard() {
         <TicketDetails
           ticket={selectedTicket}
           users={users}
+          currentUser={currentUser}
+          canAssign={isManager}
           onClose={() => setSelectedTicket(null)}
           onUpdated={updateTicketInState}
+          onDeleted={(ticketId) => {
+            setTickets((current) => current.filter((ticket) => ticket.id !== ticketId));
+            setSelectedTicket(null);
+            setMessage("Ticket removed.");
+          }}
           onError={setMessage}
         />
       )}
-      {showNewTicket && (
+      {showNewTicket && isManager && (
         <NewTicketDialog
           projects={projects}
           users={users}
@@ -226,21 +337,48 @@ export function KanbanBoard() {
 function TicketDetails({
   ticket,
   users,
+  currentUser,
+  canAssign,
   onClose,
   onUpdated,
+  onDeleted,
   onError,
 }: {
   ticket: Ticket;
   users: User[];
+  currentUser: User | null;
+  canAssign: boolean;
   onClose: () => void;
   onUpdated: (ticket: Ticket) => void;
+  onDeleted: (ticketId: string) => void;
   onError: (message: string) => void;
 }) {
+  const canUpdateStatus = canAssign || ticket.assigneeId === currentUser?.id;
+  const [deleting, setDeleting] = useState(false);
+
   const update = async (payload: { status?: TicketStatus; assigneeId?: string | null }) => {
     try {
       onUpdated(await api.updateTicket(ticket.id, payload));
     } catch (error) {
       onError(error instanceof Error ? error.message : "Unable to update ticket");
+    }
+  };
+
+  const remove = async () => {
+    if (!canAssign) return;
+    const confirmed = window.confirm(
+      `Delete ${ticket.osvId}? This removes the ticket from the board.`
+    );
+    if (!confirmed) return;
+
+    try {
+      setDeleting(true);
+      await api.deleteTicket(ticket.id);
+      onDeleted(ticket.id);
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "Unable to delete ticket");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -256,7 +394,7 @@ function TicketDetails({
             <X className="w-5 h-5" />
           </button>
         </div>
-        <p className="text-neutral-700 leading-relaxed mb-5">{ticket.description}</p>
+        <MarkdownContent content={ticket.description} className="mb-5" />
         <div className="grid grid-cols-2 gap-3 mb-5">
           <Info label="Severity" value={ticket.severity} />
           <Info label="CVSS" value={String(ticket.cvssScore)} />
@@ -270,8 +408,9 @@ function TicketDetails({
             Status
             <select
               value={ticket.status}
+              disabled={!canUpdateStatus}
               onChange={(e) => update({ status: e.target.value as TicketStatus })}
-              className="mt-2 w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-lg"
+              className="mt-2 w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <option value="todo">Backlog</option>
               <option value="in-progress">In Progress</option>
@@ -283,8 +422,9 @@ function TicketDetails({
             Assignee
             <select
               value={ticket.assigneeId ?? ""}
+              disabled={!canAssign}
               onChange={(e) => update({ assigneeId: e.target.value || null })}
-              className="mt-2 w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-lg"
+              className="mt-2 w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <option value="">Unassigned</option>
               {users.map((user) => (
@@ -293,12 +433,33 @@ function TicketDetails({
             </select>
           </label>
         </div>
+        {!canUpdateStatus ? (
+          <p className="mb-5 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
+            Only the assigned developer or a manager can move this ticket.
+          </p>
+        ) : null}
+        {canAssign ? (
+          <button
+            type="button"
+            onClick={() => void remove()}
+            disabled={deleting}
+            className="mb-5 w-full rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 transition hover:border-red-300 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {deleting ? "Removing..." : "Delete ticket"}
+          </button>
+        ) : null}
         {ticket.references.length > 0 && (
           <div>
             <h3 className="font-semibold mb-2">References</h3>
             <div className="space-y-2">
               {ticket.references.map((reference) => (
-                <a key={reference} href={reference} target="_blank" rel="noreferrer" className="block text-sm text-violet-700 hover:text-violet-900 break-all">
+                <a
+                  key={reference}
+                  href={reference}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block text-sm text-neutral-800 underline decoration-neutral-300 underline-offset-3 hover:decoration-neutral-900 break-all"
+                >
                   {reference}
                 </a>
               ))}
@@ -341,12 +502,44 @@ function NewTicketDialog({
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    const sanitizedOsvId = sanitizeSingleLineInput(form.osvId, 120);
+    const sanitizedPackage = sanitizeSingleLineInput(form.package, 150);
+    const sanitizedSummary = sanitizeSingleLineInput(form.summary, 200);
+    const sanitizedDescription = form.description.trim();
+    const sanitizedEcosystem = sanitizeSingleLineInput(form.ecosystem, 80);
+    const sanitizedCurrentVersion = sanitizeSingleLineInput(form.currentVersion, 120);
+    const sanitizedFixedVersion = sanitizeSingleLineInput(form.fixedVersion, 120);
+    const cvssScore = Number(form.cvssScore);
+
+    if (
+      !form.projectId ||
+      !sanitizedOsvId ||
+      !sanitizedPackage ||
+      !sanitizedSummary ||
+      !sanitizedDescription ||
+      !sanitizedEcosystem ||
+      !sanitizedCurrentVersion
+    ) {
+      onError("Fill in all required ticket fields before creating a manual ticket.");
+      return;
+    }
+    if (!Number.isFinite(cvssScore) || cvssScore < 0 || cvssScore > 10) {
+      onError("CVSS score must be a number between 0 and 10.");
+      return;
+    }
+
     try {
       setSaving(true);
       const created = await api.createTicket({
         ...form,
-        fixedVersion: form.fixedVersion || null,
-        cvssScore: Number(form.cvssScore),
+        osvId: sanitizedOsvId,
+        package: sanitizedPackage,
+        summary: sanitizedSummary,
+        description: sanitizedDescription,
+        ecosystem: sanitizedEcosystem,
+        currentVersion: sanitizedCurrentVersion,
+        fixedVersion: sanitizedFixedVersion || null,
+        cvssScore,
         assigneeId: form.assigneeId || null,
       });
       onCreated(created);
@@ -360,9 +553,9 @@ function NewTicketDialog({
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-6">
       <form onSubmit={submit} className="bg-white rounded-2xl border border-neutral-200 shadow-xl max-w-2xl w-full p-6">
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="text-2xl font-bold">Create Vulnerability Ticket</h2>
-          <button type="button" onClick={onClose} className="p-2 hover:bg-neutral-100 rounded-lg">
+      <div className="flex items-center justify-between mb-5">
+        <h2 className="text-2xl font-bold">Create Vulnerability Ticket</h2>
+        <button type="button" onClick={onClose} className="p-2 hover:bg-neutral-100 rounded-lg">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -407,6 +600,11 @@ function NewTicketDialog({
             </select>
           </label>
         </div>
+        {projects.length === 0 ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Add a project first so tickets can be linked to a repository scan workflow.
+          </div>
+        ) : null}
         <button disabled={saving || !form.projectId} className="mt-6 w-full px-4 py-3 bg-black text-white rounded-lg hover:bg-neutral-800 disabled:opacity-50">
           {saving ? "Creating..." : "Create Ticket"}
         </button>

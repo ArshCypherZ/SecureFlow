@@ -23,8 +23,22 @@ function wrapTicketNotepad(inner: AppDataStore): AppDataStore {
     getUser(id: string) {
       return inner.getUser(id);
     },
+    getUserByUsername(username: string) {
+      return inner.getUserByUsername(username);
+    },
     createUser(input: Parameters<AppDataStore["createUser"]>[0]) {
       return inner.createUser(input);
+    },
+    async deleteUser(id: string) {
+      const user = await inner.deleteUser(id);
+      if (user) await flush();
+      return user;
+    },
+    getUserPasswordHash(userId: string) {
+      return inner.getUserPasswordHash(userId);
+    },
+    setUserPasswordHash(userId: string, passwordHash: string) {
+      return inner.setUserPasswordHash(userId, passwordHash);
     },
     listProjects() {
       return inner.listProjects();
@@ -40,6 +54,11 @@ function wrapTicketNotepad(inner: AppDataStore): AppDataStore {
     },
     updateProject(id: string, patch: Parameters<AppDataStore["updateProject"]>[1]) {
       return inner.updateProject(id, patch);
+    },
+    async deleteProject(id: string) {
+      const project = await inner.deleteProject(id);
+      if (project) await flush();
+      return project;
     },
     listTickets(filters?: Parameters<AppDataStore["listTickets"]>[0]) {
       return inner.listTickets(filters);
@@ -61,6 +80,11 @@ function wrapTicketNotepad(inner: AppDataStore): AppDataStore {
       const t = await inner.updateTicket(id, patch);
       if (t) await flush();
       return t;
+    },
+    async deleteTicket(id) {
+      const ticket = await inner.deleteTicket(id);
+      if (ticket) await flush();
+      return ticket;
     },
     async deleteTicketsForProject(projectId) {
       await inner.deleteTicketsForProject(projectId);

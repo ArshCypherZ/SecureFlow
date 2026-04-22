@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: secureflow-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: secureflow
+      POSTGRES_PASSWORD: secureflow
+      POSTGRES_DB: secureflow
+    ports:
+      - "5433:5432"
+    volumes:
+      - secureflow_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U secureflow -d secureflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  secureflow_pg_data:

@@ -3,7 +3,6 @@ import { spawn } from "child_process";
 export interface RunCommandOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
-  /** When true, resolve even if exit code is non-zero (osv-scanner uses 1 when vulns exist). */
   allowNonZeroExit?: boolean;
 }
 

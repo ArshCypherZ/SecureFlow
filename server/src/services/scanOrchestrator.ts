@@ -8,8 +8,7 @@ import {
   normalizeGitHubHttps,
   removeWorkdir,
 } from "./gitClone.js";
-import { scanDirectoryWithOsvScanner } from "./osvScanner.js";
-import { parseOsvScannerJson } from "./ticketsFromOsv.js";
+import { scanDirectoryWithOsv } from "./osvScanner.js";
 
 const workRoot = () => join(tmpdir(), "secureflow-repos");
 
@@ -29,27 +28,29 @@ export async function enqueueScan(projectId: string): Promise<void> {
     payload: { projectId },
   });
 
-  let workdir: string | null = project.localPath ?? null;
+  let workdir: string | null = null;
+  const previousWorkdir = project.localPath;
 
   try {
-    if (!workdir) {
-      const repo = project.repository;
-      const httpsUrl = repo.startsWith("http") ? repo : `https://${repo}`;
-      const settings = await store.getSettings();
-      const token = settings.githubPat ?? process.env.GITHUB_TOKEN ?? null;
-      await mkdir(workRoot(), { recursive: true });
-      const { path } = await cloneGitHubRepo(httpsUrl, workRoot(), token);
-      workdir = path;
-      await store.updateProject(projectId, { localPath: workdir });
+    if (previousWorkdir) {
+      await removeWorkdir(previousWorkdir);
     }
 
-    const json = await scanDirectoryWithOsvScanner(workdir);
-    const rows = parseOsvScannerJson(json, projectId);
+    const repo = project.repository;
+    const httpsUrl = repo.startsWith("http") ? repo : `https://${repo}`;
+    const settings = await store.getSettings();
+    const token = settings.githubPat ?? process.env.GITHUB_TOKEN ?? null;
+    await mkdir(workRoot(), { recursive: true });
+    const cloned = await cloneGitHubRepo(httpsUrl, workRoot(), token);
+    workdir = cloned.path;
+
+    const rows = await scanDirectoryWithOsv(workdir);
     await store.upsertTicketsForProject(projectId, rows);
     await store.updateProject(projectId, {
       scanStatus: "ready",
       scanError: null,
       lastScan: new Date().toISOString(),
+      localPath: null,
     });
     const updated = await store.getProject(projectId);
     await store.pushActivity({
@@ -74,6 +75,10 @@ export async function enqueueScan(projectId: string): Promise<void> {
       type: "project.scan_failed",
       payload: { projectId, error: msg },
     });
+  } finally {
+    if (workdir) {
+      await removeProjectWorkdir(workdir);
+    }
   }
 }
 
@@ -103,6 +108,5 @@ export async function removeProjectWorkdir(localPath: string | null): Promise<vo
   try {
     await removeWorkdir(localPath);
   } catch {
-    /* ignore cleanup errors */
   }
 }

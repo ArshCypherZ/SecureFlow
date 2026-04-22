@@ -1,8 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { VulnerabilityTicket } from "../types.js";
 
-/** Human-readable ticket dump for quick viewing in Notepad (under server/data when cwd is server/). */
 export function defaultTicketsNotepadPath(): string {
   const fromEnv = process.env.TICKETS_NOTEPAD_PATH?.trim();
   if (fromEnv) return fromEnv;

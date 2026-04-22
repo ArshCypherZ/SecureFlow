@@ -1,3 +1,4 @@
+import "./loadEnv.js";
 import http from "node:http";
 import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";

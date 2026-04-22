@@ -1,10 +1,29 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { AlertTriangle, TrendingDown, ArrowUpRight, Clock, Activity, CheckCircle2, X } from "lucide-react";
+import {
+  Activity,
+  AlertTriangle,
+  ArrowUpRight,
+  CheckCircle2,
+  Clock,
+  ShieldAlert,
+  X,
+} from "lucide-react";
 import { motion } from "motion/react";
-import { api, DashboardSummary, formatDate, Project, VulnerabilityTicket } from "../lib/api";
+import { MarkdownContent } from "./MarkdownContent";
+import {
+  api,
+  formatDate,
+  type DashboardSummary,
+  type Project,
+  type VulnerabilityTicket,
+} from "../lib/api";
 
-export function DashboardIntegrated({ onViewChange }: { onViewChange: (view: string) => void }) {
+export function DashboardIntegrated({
+  onViewChange,
+}: {
+  onViewChange: (view: string) => void;
+}) {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [tickets, setTickets] = useState<VulnerabilityTicket[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -30,246 +49,417 @@ export function DashboardIntegrated({ onViewChange }: { onViewChange: (view: str
     void loadDashboard();
   }, []);
 
-  const totalVulns = summary?.totals.vulnerabilities ?? 0;
-  const criticalCount = summary?.totals.critical ?? 0;
-  const highCount = summary?.totals.high ?? 0;
-  const resolvedCount = summary?.totals.resolved ?? 0;
-  const inProgressCount = (summary?.byStatus["in-progress"] ?? 0) + (summary?.byStatus["in-review"] ?? 0);
-  const recentVulns = [...tickets]
-    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-    .slice(0, 5);
   const criticalTickets = tickets.filter((ticket) => ticket.severity === "CRITICAL");
+  const recentTickets = [...tickets]
+    .sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime())
+    .slice(0, 5);
 
   return (
-    <div className="p-8 pb-20">
-      <div className="mb-12">
-        <div className="flex items-start justify-between">
-          <div className="max-w-2xl">
-            <h1 className="text-5xl font-bold tracking-tight mb-3 font-serif italic">
-              Security Overview
+    <div className="p-4 sm:p-6 lg:p-8">
+      <div className="mb-8">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-[0.22em] text-neutral-500">
+              Overview
+            </p>
+            <h1 className="mt-2 text-4xl font-semibold tracking-tight sm:text-5xl">
+              Security posture
             </h1>
-            <p className="text-lg text-neutral-600">
-              Real-time vulnerability tracking across{" "}
-              <span className="font-semibold text-neutral-900">{projects.length} repositories</span>
+            <p className="mt-3 max-w-2xl text-base text-neutral-600">
+              Live snapshot of project scans, open findings, and remediation progress across the
+              workspace.
             </p>
           </div>
-          <div className="text-right">
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 border border-neutral-200 rounded-full text-sm mb-2">
-              <div className="w-2 h-2 bg-lime-400 rounded-full animate-pulse" />
-              <span className="text-neutral-600">Live</span>
-            </div>
-            <p className="text-xs text-neutral-500">Last scan: {formatDate(projects[0]?.lastScan ?? null)}</p>
+          <div className="rounded-[1.5rem] border border-neutral-200 bg-white px-5 py-4 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-neutral-500">
+              Workspace
+            </p>
+            <p className="mt-2 text-sm text-neutral-600">
+              Projects: <span className="font-semibold text-neutral-950">{projects.length}</span>
+            </p>
+            <p className="mt-1 text-sm text-neutral-600">
+              Last scan:{" "}
+              <span className="font-semibold text-neutral-950">
+                {formatDate(projects[0]?.lastScan ?? null)}
+              </span>
+            </p>
           </div>
         </div>
-        {message && (
-          <div className="mt-4 bg-white border border-neutral-200 rounded-lg px-4 py-3 text-sm text-neutral-700 flex items-center justify-between">
-            <span>{message}</span>
-            <button onClick={() => setMessage("")} className="text-neutral-400 hover:text-neutral-900">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        )}
+
+        {message ? <Notice message={message} onClose={() => setMessage("")} /> : null}
       </div>
 
-      <div className="grid grid-cols-12 gap-4 mb-8">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="col-span-5 row-span-2 bg-red-50 border-2 border-red-200 rounded-2xl p-8 relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-red-100 rounded-full -mr-16 -mt-16" />
-          <div className="relative">
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-red-100 border border-red-200 rounded-full text-xs font-semibold text-red-700 mb-4">
-              <AlertTriangle className="w-3 h-3" />
-              CRITICAL
-            </div>
-            <div className="mb-6">
-              <div className="text-6xl font-bold mb-2">{criticalCount}</div>
-              <p className="text-neutral-700 text-lg">Critical vulnerabilities requiring immediate attention</p>
-            </div>
-            <button onClick={() => setShowCritical(true)} className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium">
-              View Details
-              <ArrowUpRight className="w-4 h-4" />
-            </button>
+      {projects.length === 0 ? (
+        <div className="rounded-[2rem] border-2 border-dashed border-neutral-300 bg-neutral-50 px-6 py-16 text-center">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-white shadow-sm">
+            <ShieldAlert className="h-7 w-7 text-neutral-400" />
           </div>
-        </motion.div>
-
-        <MetricCard delay={0.2} label="Total Vulnerabilities" value={totalVulns} icon={<Activity className="w-5 h-5 text-neutral-600" />}>
-          <div className="flex items-center gap-2 text-sm">
-            <TrendingDown className="w-4 h-4 text-green-600" />
-            <span className="text-green-600 font-semibold">Live</span>
-            <span className="text-neutral-500">from backend</span>
-          </div>
-        </MetricCard>
-
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }} className="col-span-3 bg-lime-400 border-2 border-lime-500 rounded-2xl p-6">
-          <CheckCircle2 className="w-8 h-8 mb-3" />
-          <div className="text-3xl font-bold mb-1">{resolvedCount}</div>
-          <p className="text-sm font-medium">Resolved</p>
-        </motion.div>
-
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="col-span-4 bg-white border border-neutral-200 rounded-2xl p-6 dot-pattern-dense">
-          <div className="relative bg-white/80 backdrop-blur-sm p-4 rounded-lg">
-            <p className="text-sm text-neutral-500 mb-1">High Priority</p>
-            <div className="text-4xl font-bold mb-2">{highCount}</div>
-            <div className="w-full bg-neutral-200 h-2 rounded-full overflow-hidden">
-              <div className="h-full bg-orange-500 rounded-full" style={{ width: `${totalVulns ? (highCount / totalVulns) * 100 : 0}%` }} />
-            </div>
-          </div>
-        </motion.div>
-
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }} className="col-span-3 bg-violet-600 text-white rounded-2xl p-6">
-          <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center mb-3">
-            <Clock className="w-5 h-5" />
-          </div>
-          <div className="text-3xl font-bold mb-1">{inProgressCount}</div>
-          <p className="text-sm text-violet-100">In Progress</p>
-        </motion.div>
-      </div>
-
-      <div className="mb-8">
-        <div className="flex items-end justify-between mb-6">
-          <div>
-            <h2 className="text-3xl font-bold font-serif italic mb-1">Recent Activity</h2>
-            <p className="text-neutral-600">Latest vulnerability updates</p>
-          </div>
-          <button onClick={() => onViewChange("kanban")} className="text-sm font-medium text-neutral-600 hover:text-neutral-900 transition-colors">
-            View all →
+          <h2 className="mt-5 text-2xl font-semibold text-neutral-950">Start with a repository</h2>
+          <p className="mx-auto mt-3 max-w-xl text-neutral-600">
+            Add a GitHub project to kick off scanning. Once findings arrive, the board and activity
+            stream will populate automatically.
+          </p>
+          <button
+            type="button"
+            onClick={() => onViewChange("projects")}
+            className="mt-6 inline-flex items-center gap-2 rounded-2xl bg-neutral-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-neutral-800"
+          >
+            Open Projects
+            <ArrowUpRight className="h-4 w-4" />
           </button>
         </div>
-
-        <div className="space-y-3">
-          {recentVulns.map((vuln, index) => (
-            <motion.div key={vuln.id} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.4 + index * 0.05 }} onClick={() => setSelectedTicket(vuln)} className="bg-white border border-neutral-200 rounded-xl p-5 hover:border-neutral-300 transition-all cursor-pointer group">
-              <div className="flex items-start gap-4">
-                <div className={`mt-1.5 w-2 h-2 rounded-full ${severityDot(vuln.severity)}`} />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between gap-4 mb-2">
-                    <div>
-                      <h3 className="font-semibold text-neutral-900 mb-1 group-hover:text-violet-600 transition-colors">{vuln.summary}</h3>
-                      <div className="flex items-center gap-3 text-sm text-neutral-500">
-                        <span className="font-mono text-xs">{vuln.package}</span>
-                        <span>•</span>
-                        <span className="font-mono text-xs">{vuln.osvId}</span>
-                      </div>
-                    </div>
-                    <div className="flex-shrink-0 text-right">
-                      <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${severityBadge(vuln.severity)}`}>{vuln.severity}</div>
-                      <p className="text-xs text-neutral-400 mt-1">CVSS {vuln.cvssScore}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    {vuln.assignee && (
-                      <div className="flex items-center gap-2 text-sm text-neutral-600">
-                        <div className="w-5 h-5 bg-gradient-to-br from-violet-500 to-purple-600 rounded-full flex items-center justify-center text-[10px] font-semibold text-white">{vuln.assignee.avatar}</div>
-                        <span>{vuln.assignee.name}</span>
-                      </div>
-                    )}
-                    <div className="px-2 py-0.5 rounded text-xs font-medium bg-neutral-100 text-neutral-800">{vuln.status}</div>
-                  </div>
+      ) : (
+        <>
+          <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+            <motion.div
+              initial={{ opacity: 0, y: 18 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="rounded-[2rem] border border-red-200 bg-red-50 p-8"
+            >
+              <div className="inline-flex items-center gap-2 rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-700">
+                <AlertTriangle className="h-3.5 w-3.5" />
+                Critical findings
+              </div>
+              <div className="mt-5">
+                <div className="text-6xl font-semibold tracking-tight text-neutral-950">
+                  {summary?.totals.critical ?? 0}
                 </div>
+                <p className="mt-3 max-w-lg text-neutral-700">
+                  High-risk vulnerabilities that should be triaged first.
+                </p>
               </div>
+              <button
+                type="button"
+                onClick={() => setShowCritical(true)}
+                className="mt-6 inline-flex items-center gap-2 rounded-2xl bg-red-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-red-700"
+              >
+                Review critical tickets
+                <ArrowUpRight className="h-4 w-4" />
+              </button>
             </motion.div>
-          ))}
-        </div>
-      </div>
 
-      <div>
-        <h2 className="text-3xl font-bold font-serif italic mb-6">Active Projects</h2>
-        <div className="grid grid-cols-2 gap-4">
-          {projects.map((project, index) => (
-            <motion.div key={project.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 + index * 0.1 }} onClick={() => onViewChange("projects")} className={`bg-white border border-neutral-200 rounded-2xl p-6 hover:border-neutral-300 transition-all cursor-pointer group ${index === 0 ? "border-2 border-neutral-900" : ""}`}>
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex-1">
-                  <h3 className="font-semibold text-lg mb-1 group-hover:text-violet-600 transition-colors">{project.name}</h3>
-                  <p className="text-sm text-neutral-500 font-mono">{project.repository}</p>
-                </div>
-                {index === 0 && <div className="px-2 py-1 bg-lime-400 text-xs font-bold rounded">MAIN</div>}
-              </div>
-              <div className="grid grid-cols-4 gap-2 mb-4">
-                <ProjectCount label="Critical" value={project.criticalCount} className="bg-red-50 border-red-100 text-red-600" />
-                <ProjectCount label="High" value={project.highCount} className="bg-orange-50 border-orange-100 text-orange-600" />
-                <ProjectCount label="Medium" value={project.mediumCount} className="bg-yellow-50 border-yellow-100 text-yellow-600" />
-                <ProjectCount label="Low" value={project.lowCount} className="bg-green-50 border-green-100 text-green-600" />
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-neutral-500">Last scan: {formatDate(project.lastScan)}</span>
-                <span className="font-mono font-semibold">{project.totalVulnerabilities} total</span>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      </div>
-
-      {showCritical && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-6">
-          <div className="bg-white rounded-2xl border border-neutral-200 shadow-xl max-w-2xl w-full p-6">
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="text-2xl font-bold">Critical Vulnerabilities</h2>
-              <button onClick={() => setShowCritical(false)} className="p-2 hover:bg-neutral-100 rounded-lg"><X className="w-5 h-5" /></button>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <MetricCard
+                label="Total findings"
+                value={summary?.totals.vulnerabilities ?? 0}
+                icon={<Activity className="h-5 w-5 text-neutral-700" />}
+              />
+              <MetricCard
+                label="Resolved"
+                value={summary?.totals.resolved ?? 0}
+                icon={<CheckCircle2 className="h-5 w-5 text-lime-700" />}
+              />
+              <MetricCard
+                label="In progress"
+                value={
+                  (summary?.byStatus["in-progress"] ?? 0) +
+                  (summary?.byStatus["in-review"] ?? 0)
+                }
+                icon={<Clock className="h-5 w-5 text-amber-700" />}
+              />
+              <MetricCard
+                label="Open"
+                value={summary?.totals.open ?? 0}
+                icon={<ShieldAlert className="h-5 w-5 text-blue-700" />}
+              />
             </div>
-            <div className="space-y-3 max-h-[60vh] overflow-y-auto">
-              {criticalTickets.map((ticket) => (
-                <button key={ticket.id} onClick={() => { setShowCritical(false); setSelectedTicket(ticket); }} className="w-full text-left p-4 bg-red-50 border border-red-100 rounded-xl hover:border-red-300">
-                  <div className="font-semibold">{ticket.summary}</div>
-                  <div className="text-xs text-neutral-500 font-mono mt-1">{ticket.osvId} · CVSS {ticket.cvssScore}</div>
+          </div>
+
+          <div className="mt-8 grid gap-6 xl:grid-cols-[1fr_0.95fr]">
+            <section className="rounded-[2rem] border border-neutral-200 bg-white p-6">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-2xl font-semibold tracking-tight text-neutral-950">
+                    Recent ticket activity
+                  </h2>
+                  <p className="mt-2 text-sm text-neutral-600">
+                    Most recently updated findings from the board.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onViewChange("kanban")}
+                  className="text-sm font-semibold text-neutral-700 transition hover:text-neutral-950"
+                >
+                  Open board
                 </button>
-              ))}
-            </div>
+              </div>
+
+              <div className="mt-6 space-y-3">
+                {recentTickets.map((ticket, index) => (
+                  <motion.button
+                    key={ticket.id}
+                    type="button"
+                    initial={{ opacity: 0, x: -16 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.24, delay: 0.04 * index }}
+                    onClick={() => setSelectedTicket(ticket)}
+                    className="w-full rounded-[1.4rem] border border-neutral-200 bg-white px-5 py-4 text-left transition hover:border-neutral-300"
+                  >
+                    <div className="flex items-start gap-4">
+                      <div className={`mt-1 h-2.5 w-2.5 rounded-full ${severityDot(ticket.severity)}`} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="min-w-0">
+                            <h3 className="font-semibold text-neutral-950">{ticket.summary}</h3>
+                            <p className="mt-1 text-sm text-neutral-500">
+                              <span className="font-mono">{ticket.package}</span>
+                              <span className="px-2">•</span>
+                              <span className="font-mono">{ticket.osvId}</span>
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${severityBadge(ticket.severity)}`}>
+                              {ticket.severity}
+                            </span>
+                            <span className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-semibold text-neutral-700">
+                              {ticket.status}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-neutral-600">
+                          <span>CVSS {ticket.cvssScore}</span>
+                          <span className="text-neutral-300">•</span>
+                          <span>Updated {formatDate(ticket.updatedAt)}</span>
+                          {ticket.assignee ? (
+                            <>
+                              <span className="text-neutral-300">•</span>
+                              <span className="inline-flex items-center gap-2">
+                                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-neutral-950 text-[10px] font-semibold text-white">
+                                  {ticket.assignee.avatar}
+                                </span>
+                                {ticket.assignee.name}
+                              </span>
+                            </>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  </motion.button>
+                ))}
+              </div>
+            </section>
+
+            <section className="rounded-[2rem] border border-neutral-200 bg-white p-6">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-2xl font-semibold tracking-tight text-neutral-950">
+                    Project health
+                  </h2>
+                  <p className="mt-2 text-sm text-neutral-600">
+                    Scan coverage and vulnerability counts per repository.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onViewChange("projects")}
+                  className="text-sm font-semibold text-neutral-700 transition hover:text-neutral-950"
+                >
+                  Manage projects
+                </button>
+              </div>
+
+              <div className="mt-6 space-y-3">
+                {projects.map((project, index) => (
+                  <motion.button
+                    key={project.id}
+                    type="button"
+                    initial={{ opacity: 0, y: 18 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.24, delay: 0.05 * index }}
+                    onClick={() => onViewChange("projects")}
+                    className="w-full rounded-[1.4rem] border border-neutral-200 bg-neutral-50 px-5 py-4 text-left transition hover:border-neutral-300"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <h3 className="text-lg font-semibold tracking-tight text-neutral-950">
+                          {project.name}
+                        </h3>
+                        <p className="mt-1 truncate font-mono text-xs text-neutral-500">
+                          {project.repository}
+                        </p>
+                      </div>
+                      <span className={`rounded-full px-3 py-1 text-xs font-semibold ${projectStatus(project.scanStatus)}`}>
+                        {project.scanStatus}
+                      </span>
+                    </div>
+                    <div className="mt-4 grid grid-cols-4 gap-2">
+                      <ProjectCount label="Critical" value={project.criticalCount} className="bg-red-50 border-red-100 text-red-700" />
+                      <ProjectCount label="High" value={project.highCount} className="bg-orange-50 border-orange-100 text-orange-700" />
+                      <ProjectCount label="Medium" value={project.mediumCount} className="bg-yellow-50 border-yellow-100 text-yellow-700" />
+                      <ProjectCount label="Low" value={project.lowCount} className="bg-green-50 border-green-100 text-green-700" />
+                    </div>
+                    <div className="mt-4 flex items-center justify-between text-sm text-neutral-600">
+                      <span>Last scan {formatDate(project.lastScan)}</span>
+                      <span className="font-semibold text-neutral-950">
+                        {project.totalVulnerabilities} total
+                      </span>
+                    </div>
+                  </motion.button>
+                ))}
+              </div>
+            </section>
           </div>
-        </div>
+        </>
       )}
 
-      {selectedTicket && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-6">
-          <div className="bg-white rounded-2xl border border-neutral-200 shadow-xl max-w-2xl w-full p-6">
-            <div className="flex items-start justify-between gap-4 mb-4">
-              <div>
-                <div className="text-xs font-mono text-neutral-500 mb-2">{selectedTicket.osvId}</div>
-                <h2 className="text-2xl font-bold">{selectedTicket.summary}</h2>
+      {showCritical ? (
+        <Modal onClose={() => setShowCritical(false)} title="Critical vulnerabilities">
+          <div className="space-y-3">
+            {criticalTickets.length > 0 ? (
+              criticalTickets.map((ticket) => (
+                <button
+                  key={ticket.id}
+                  type="button"
+                  onClick={() => {
+                    setShowCritical(false);
+                    setSelectedTicket(ticket);
+                  }}
+                  className="w-full rounded-2xl border border-red-100 bg-red-50 px-4 py-4 text-left transition hover:border-red-300"
+                >
+                  <div className="font-semibold text-neutral-950">{ticket.summary}</div>
+                  <div className="mt-1 text-xs font-mono text-neutral-500">
+                    {ticket.osvId} · CVSS {ticket.cvssScore}
+                  </div>
+                </button>
+              ))
+            ) : (
+              <div className="rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-4 text-sm text-neutral-600">
+                No critical vulnerabilities are open right now.
               </div>
-              <button onClick={() => setSelectedTicket(null)} className="p-2 hover:bg-neutral-100 rounded-lg"><X className="w-5 h-5" /></button>
-            </div>
-            <p className="text-neutral-700 mb-5">{selectedTicket.description}</p>
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <Info label="Severity" value={selectedTicket.severity} />
-              <Info label="Status" value={selectedTicket.status} />
-              <Info label="Package" value={`${selectedTicket.package}@${selectedTicket.currentVersion}`} />
-              <Info label="Fixed Version" value={selectedTicket.fixedVersion ? `v${selectedTicket.fixedVersion}` : "Not available"} />
-            </div>
-            <button onClick={() => onViewChange("kanban")} className="mt-6 w-full px-4 py-3 bg-black text-white rounded-lg hover:bg-neutral-800">Open in Kanban</button>
+            )}
           </div>
-        </div>
-      )}
+        </Modal>
+      ) : null}
+
+      {selectedTicket ? (
+        <Modal onClose={() => setSelectedTicket(null)} title={selectedTicket.summary}>
+          <div className="text-xs font-mono text-neutral-500">{selectedTicket.osvId}</div>
+          <MarkdownContent content={selectedTicket.description} className="mt-4" />
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            <Info label="Severity" value={selectedTicket.severity} />
+            <Info label="Status" value={selectedTicket.status} />
+            <Info
+              label="Package"
+              value={`${selectedTicket.package}@${selectedTicket.currentVersion}`}
+            />
+            <Info
+              label="Fixed version"
+              value={selectedTicket.fixedVersion ? `v${selectedTicket.fixedVersion}` : "Not available"}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => onViewChange("kanban")}
+            className="mt-6 w-full rounded-2xl bg-neutral-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-neutral-800"
+          >
+            Open in board
+          </button>
+        </Modal>
+      ) : null}
     </div>
   );
 }
 
-function MetricCard({ delay, label, value, icon, children }: { delay: number; label: string; value: number; icon: ReactNode; children: ReactNode }) {
+function MetricCard({
+  label,
+  value,
+  icon,
+}: {
+  label: string;
+  value: number;
+  icon: ReactNode;
+}) {
   return (
-    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay }} className="col-span-4 bg-white border border-neutral-200 rounded-2xl p-6">
-      <div className="flex items-start justify-between mb-4">
+    <motion.div
+      initial={{ opacity: 0, y: 18 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="rounded-[1.7rem] border border-neutral-200 bg-white p-6"
+    >
+      <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-sm text-neutral-500 mb-1">{label}</p>
-          <div className="text-4xl font-bold">{value}</div>
+          <p className="text-sm text-neutral-500">{label}</p>
+          <div className="mt-2 text-4xl font-semibold tracking-tight text-neutral-950">
+            {value}
+          </div>
         </div>
-        <div className="w-10 h-10 bg-neutral-100 rounded-lg flex items-center justify-center">{icon}</div>
+        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-neutral-100">
+          {icon}
+        </div>
       </div>
-      {children}
     </motion.div>
   );
 }
 
-function ProjectCount({ label, value, className }: { label: string; value: number; className: string }) {
+function ProjectCount({
+  label,
+  value,
+  className,
+}: {
+  label: string;
+  value: number;
+  className: string;
+}) {
   return (
-    <div className={`text-center p-2 rounded-lg border ${className}`}>
-      <div className="text-xl font-bold">{value}</div>
-      <div className="text-[10px] text-neutral-500 uppercase tracking-wide">{label}</div>
+    <div className={`rounded-2xl border px-3 py-3 text-center ${className}`}>
+      <div className="text-xl font-semibold tracking-tight">{value}</div>
+      <div className="mt-1 text-[10px] font-medium uppercase tracking-[0.18em] text-neutral-500">
+        {label}
+      </div>
     </div>
   );
 }
 
 function Info({ label, value }: { label: string; value: string }) {
   return (
-    <div className="p-3 bg-neutral-50 border border-neutral-100 rounded-lg">
-      <div className="text-xs text-neutral-500 mb-1">{label}</div>
-      <div className="font-medium break-words">{value}</div>
+    <div className="rounded-2xl border border-neutral-100 bg-neutral-50 p-4">
+      <div className="text-xs font-medium uppercase tracking-[0.2em] text-neutral-500">
+        {label}
+      </div>
+      <div className="mt-2 text-sm font-semibold text-neutral-950">{value}</div>
+    </div>
+  );
+}
+
+function Modal({
+  title,
+  children,
+  onClose,
+}: {
+  title: string;
+  children: ReactNode;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 sm:p-6">
+      <div className="w-full max-w-2xl rounded-[1.8rem] border border-neutral-200 bg-white p-6 shadow-2xl">
+        <div className="flex items-start justify-between gap-4">
+          <h2 className="text-2xl font-semibold tracking-tight text-neutral-950">{title}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-950"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="mt-4">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function Notice({ message, onClose }: { message: string; onClose: () => void }) {
+  return (
+    <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-700">
+      <span>{message}</span>
+      <button
+        type="button"
+        onClick={onClose}
+        className="rounded-lg p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900"
+      >
+        <X className="h-4 w-4" />
+      </button>
     </div>
   );
 }
@@ -282,8 +472,16 @@ function severityDot(severity: string) {
 }
 
 function severityBadge(severity: string) {
-  if (severity === "CRITICAL") return "bg-red-100 text-red-700 border border-red-200";
-  if (severity === "HIGH") return "bg-orange-100 text-orange-700 border border-orange-200";
-  if (severity === "MEDIUM") return "bg-yellow-100 text-yellow-700 border border-yellow-200";
-  return "bg-green-100 text-green-700 border border-green-200";
+  if (severity === "CRITICAL") return "bg-red-100 text-red-700";
+  if (severity === "HIGH") return "bg-orange-100 text-orange-700";
+  if (severity === "MEDIUM") return "bg-yellow-100 text-yellow-700";
+  return "bg-green-100 text-green-700";
+}
+
+function projectStatus(status: Project["scanStatus"]) {
+  if (status === "error") return "bg-red-50 text-red-700";
+  if (status === "ready") return "bg-lime-50 text-lime-800";
+  if (status === "scanning") return "bg-blue-50 text-blue-700";
+  if (status === "queued") return "bg-amber-50 text-amber-700";
+  return "bg-neutral-100 text-neutral-700";
 }

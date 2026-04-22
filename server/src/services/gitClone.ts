@@ -6,7 +6,6 @@ export interface CloneResult {
   path: string;
 }
 
-/** Shallow clone for dependency scanning; callers should remove the directory when done. */
 export async function cloneGitHubRepo(
   repositoryUrl: string,
   baseDir: string,
@@ -20,10 +19,21 @@ export async function cloneGitHubRepo(
   const cloneUrl = injectGithubToken(normalized, token);
   await runCommand(
     "git",
-    ["clone", "--depth", "1", cloneUrl, dest],
+    ["clone", "--depth", "1", "--recurse-submodules", "--shallow-submodules", cloneUrl, dest],
     { allowNonZeroExit: false }
   );
   return { path: dest };
+}
+
+export async function assertGitHubRepoAccessible(
+  repositoryUrl: string,
+  token?: string | null
+): Promise<void> {
+  const normalized = normalizeGitHubHttps(repositoryUrl);
+  const cloneUrl = injectGithubToken(normalized, token);
+  await runCommand("git", ["ls-remote", "--exit-code", cloneUrl, "HEAD"], {
+    allowNonZeroExit: false,
+  });
 }
 
 export function normalizeGitHubHttps(url: string): string {
