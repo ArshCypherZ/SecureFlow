@@ -42,8 +42,9 @@ export const apiRouter = Router();
 type LoginAttempts = { count: number; blockedUntil: number | null };
 
 const loginAttemptsByUsername = new Map<string, LoginAttempts>();
-const MAX_LOGIN_ATTEMPTS = 5;
+const MAX_LOGIN_ATTEMPTS = 3;
 const LOGIN_BLOCK_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_LOCK_MESSAGE = "Login temporarily locked. Try again later.";
 
 apiRouter.get("/health", (_req, res) => {
   res.json({
@@ -68,12 +69,16 @@ apiRouter.post(
 
     const now = Date.now();
     const attempts = loginAttemptsByUsername.get(username);
-    if (attempts?.blockedUntil && attempts.blockedUntil > now) {
-      res.status(429).json({
-        error: "Too many attempts",
-        message: "Login temporarily locked. Try again later.",
-      });
-      return;
+    if (attempts?.blockedUntil) {
+      if (attempts.blockedUntil > now) {
+        res.status(429).json({
+          error: "Too many attempts",
+          message: LOGIN_LOCK_MESSAGE,
+        });
+        return;
+      }
+
+      loginAttemptsByUsername.delete(username);
     }
 
     const user = await store.getUserByUsername(username);
@@ -86,10 +91,20 @@ apiRouter.post(
         blockedUntil: null,
       };
       const nextCount = current.count + 1;
+      const shouldLock = nextCount > MAX_LOGIN_ATTEMPTS;
       loginAttemptsByUsername.set(username, {
         count: nextCount,
-        blockedUntil: nextCount >= MAX_LOGIN_ATTEMPTS ? now + LOGIN_BLOCK_WINDOW_MS : null,
+        blockedUntil: shouldLock ? now + LOGIN_BLOCK_WINDOW_MS : null,
       });
+
+      if (shouldLock) {
+        res.status(429).json({
+          error: "Too many attempts",
+          message: LOGIN_LOCK_MESSAGE,
+        });
+        return;
+      }
+
       res.status(401).json({ error: "Invalid username or password" });
       return;
     }

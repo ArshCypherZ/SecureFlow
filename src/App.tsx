@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { ClipboardEvent, FormEvent, KeyboardEvent, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Menu, Shield } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
@@ -426,6 +426,23 @@ function Field({
   type?: string;
   autoComplete?: string;
 }) {
+  const isProtectedPasswordField = type === "password";
+
+  const blockClipboardAction = (event: ClipboardEvent<HTMLInputElement>) => {
+    if (!isProtectedPasswordField) return;
+    event.preventDefault();
+  };
+
+  const blockClipboardShortcut = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (!isProtectedPasswordField) return;
+    if (!(event.ctrlKey || event.metaKey)) return;
+
+    const key = event.key.toLowerCase();
+    if (key === "c" || key === "x") {
+      event.preventDefault();
+    }
+  };
+
   return (
     <label htmlFor={id} className="auth-field">
       <span className="auth-field__label">{label}</span>
@@ -437,6 +454,9 @@ function Field({
         onChange={(event) => onChange(event.target.value)}
         autoComplete={autoComplete}
         className="auth-input"
+        onCopy={blockClipboardAction}
+        onCut={blockClipboardAction}
+        onKeyDown={blockClipboardShortcut}
       />
     </label>
   );
