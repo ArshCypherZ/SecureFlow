@@ -2,3 +2,5 @@ node_modules
 package-lock.json
 .env
 __pycache__
+server/dist
+server/data/tickets-notepad.txt
